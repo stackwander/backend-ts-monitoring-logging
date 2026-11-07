@@ -5,10 +5,18 @@
 [![Prisma](https://img.shields.io/badge/Prisma-5.20-2D3748?logo=prisma&logoColor=white)](src/ca_infrastructure/database/prisma/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-Primary-47A248?logo=mongodb&logoColor=white)](src/ca_infrastructure/database/prisma/mongodb/schema.mongodb.prisma)
 [![Redis](https://img.shields.io/badge/Redis-Sessions-DC382D?logo=redis&logoColor=white)](src/ca_infrastructure/database/redis/redis.ts)
+[![JWT Authentication](https://img.shields.io/badge/JWT-Authentication-000000?logo=jsonwebtokens&logoColor=white)](src/ca_infrastructure/authentication/authentication.ts)
+[![Passport.js](https://img.shields.io/badge/Passport.js-0.7-34E27A?logo=passport&logoColor=white)](src/ca_infrastructure/authentication/authentication.ts)
+[![Zod](https://img.shields.io/badge/Zod-3.23-3E67B1?logo=zod&logoColor=white)](src/ca_application/validation/customerschema.ts)
+[![Winston](https://img.shields.io/badge/Winston-Logging-231F20)](src/ca_infrastructure/logging/logger.ts)
+[![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?logo=prometheus&logoColor=white)](prometheus.yml)
+[![Loki](https://img.shields.io/badge/Loki-Logs-F46800)](loki-config.yml)
+[![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?logo=grafana&logoColor=white)](monitoring/grafana/dashboards/p4-overview.json)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Postman](https://img.shields.io/badge/Postman-API_Testing-FF6C37?logo=postman&logoColor=white)](backend.postman_collection.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A TypeScript commerce backend for managing **customers, products, orders, and users**.
+An educational TypeScript shop API for managing **customers, products, orders, and users**.
 Built with **Express**, **Prisma**, and **MongoDB**, p4 demonstrates a layered Clean Architecture
 approach with use cases, repository interfaces, JWT authentication, Redis-backed login state,
 centralized error handling, and an observability stack using Prometheus, Grafana, and Loki.
@@ -21,21 +29,35 @@ separate HTTP handling, application operations, domain models, and infrastructur
 > switch the application to PostgreSQL. The project remains a learning implementation with the
 > limitations documented below.
 
+The Express API runs locally on your host. Docker Compose supplies Redis and the monitoring
+services; MongoDB must be supplied separately. Begin with the setup and API examples, then use
+the monitoring walkthrough to see the requests in Prometheus, Loki, and Grafana.
+
+[Getting started](#-getting-started) · [API reference](#-api-reference) ·
+[Monitoring walkthrough](#-monitoring--logging-beginner-walkthrough) ·
+[Current limitations](#-current-limitations--deployment-notes)
+
 ---
 
 ## 🧰 Technology Stack
 
 | Technology | How this project uses it |
 | :--- | :--- |
+| **TypeScript** | Compiles the application with strict type checking; HTTP input still needs runtime validation |
+| **Express** | Hosts the HTTP server's middleware, routes and controllers |
+| **Prisma** | Generates database clients and implements persistence through repositories |
+| **MongoDB** | Stores all active application resources using ObjectId identifiers |
 | **JWT Authentication** | Issues access and refresh tokens and verifies bearer tokens for protected routes |
-| **Passport.js** | Configures local and JWT strategies; protected routes use the JWT strategy |
+| **Passport.js** | Protects routes with its JWT strategy; login follows the service/use-case path rather than the configured local strategy |
 | **Redis** | Stores login state that must exist for JWT-authenticated requests |
 | **Zod** | Validates customer creation input, including customer name and email |
+| **Winston** | Writes structured application and request completion logs to the console and optionally Loki |
 | **Prometheus** | Collects process and HTTP duration metrics exposed at `/metrics` |
 | **Loki** | Receives application logs through the Winston Loki transport |
 | **Grafana** | Starts with provisioned Prometheus/Loki data sources and a beginner dashboard |
 | **Docker Compose** | Runs supporting services, including Redis and the monitoring stack; the API starts separately |
 | **Postman** | Provides an included request collection for exploring and checking the API |
+| **PostgreSQL / pgAdmin** | Optional alternative-schema tooling in Compose; the active repositories still use MongoDB |
 
 ---
 
@@ -53,15 +75,18 @@ flowchart TD
     Service[Application: services and use cases]
     Repository[Infrastructure: Prisma repositories]
     Mongo[(MongoDB)]
-    Metrics[Prometheus metrics /metrics]
-    Logs[Winston / Loki]
+    Endpoint[API /metrics]
+    Prometheus[Prometheus scraper]
+    Winston[Winston JSON logs]
+    Console[Console output]
+    Loki[Loki log storage]
     Grafana[Grafana dashboards]
 
     Client --> HTTP --> Auth --> Controller --> Service --> Repository --> Mongo
-    HTTP -. request duration .-> Metrics
-    HTTP -. completion logs / optional Loki transport .-> Logs
-    Metrics --> Grafana
-    Logs --> Grafana
+    HTTP -. exposes measurements .-> Endpoint
+    Endpoint -->|scraped every 15 seconds| Prometheus --> Grafana
+    HTTP -. completion logs .-> Winston --> Console
+    Winston -. LOKI_ENABLED=true .-> Loki --> Grafana
 ```
 
 Registration and login are public; the resource routes use the JWT middleware. `/metrics` is also
@@ -136,7 +161,8 @@ than database-enforced foreign keys.
 
 - **🧩 Layered organization** — Controllers, services, use cases, interfaces and repositories.
 - **🛍️ Commerce CRUD** — Customers, products and orders, including nested order items and product reads.
-- **🔐 Token authentication** — bcrypt password hashing, Passport JWT checks, login, refresh and logout.
+- **🔐 Token authentication** — bcrypt hashing during registration, Passport JWT checks, login,
+  refresh and logout, with the token-lifecycle limitations described below.
 - **⚡ Redis login state** — Protected requests require a cached user record in addition to a valid JWT.
 - **✅ Customer validation** — Zod checks customer creation input, including name and email.
 - **🛡️ HTTP middleware** — A configured CORS allowlist and a limit of 100 API requests per IP per 15 minutes.
@@ -152,7 +178,7 @@ than database-enforced foreign keys.
 ## 📂 Repository Structure
 
 ```text
-backendcleants_p4/
+<project-root>/
 ├── src/
 │   ├── app.ts                         # Express configuration and route mounting
 │   ├── bin/www.ts                     # HTTP server entry point
@@ -188,6 +214,8 @@ backendcleants_p4/
 │   └── dashboards/p4-overview.json     # Beginner metrics and logs dashboard
 ├── test/monitoring.test.cjs            # Isolated observability regression checks
 ├── .env.example                       # Safe configuration template
+├── LICENSE                            # MIT license
+├── DISCLAIMER.md                      # Educational scope and deployment responsibilities
 ├── SetupNotes.txt                     # Original development notes
 ├── package.json                       # Dependencies and scripts
 └── README.md
@@ -203,8 +231,9 @@ Services group operations for a resource. A use case implements an individual ac
 creating a customer or fetching an order, and delegates persistence to a repository. Domain
 interfaces make the expected operations explicit, while Prisma stays in infrastructure.
 
-Customer creation also invokes `CustomerValidator` before writing. Other resource operations do
-not have equivalent comprehensive runtime validation.
+Customer creation also invokes `CustomerValidator` before writing. Customer updates and other
+resource operations do not run that validator. The parsed Zod result is not substituted for the
+request body, so this is not a shared sanitization or unknown-field rejection layer.
 
 ### JWT authentication with Redis login state
 
@@ -230,9 +259,14 @@ sequenceDiagram
     A-->>C: Resource response
 ```
 
+The HTTP login handler delegates through `UserService` to `LoginUsecase` with an email and
+password. The configured Passport local strategy looks up usernames, but no route invokes it.
+
 The Redis entry has no configured expiry. Refresh currently also requires a valid bearer token
 because its route uses the JWT guard; it cannot recover a session using only a refresh token
-after the access token expires. Both token types use the same signing key and payload structure.
+after the access token expires. Both token types use the same signing key and payload structure;
+the JWT guard does not distinguish a refresh token from an access token. A later login recreates
+the user cache entry and can therefore make previously issued, unexpired tokens usable again.
 
 ### Database adapters are explicit
 
@@ -246,10 +280,12 @@ requires adapting repositories and contracts as well as configuring its URL.
 
 ### Prerequisites
 
-- Node.js and npm compatible with the locked dependencies. The existing Dockerfile uses Node 18.
+- Node.js and npm. The current monitoring and login regression checks pass on Node.js 26.13.0.
+  The repository does not declare a Node `engines` range. The historical Dockerfile uses Node 18
+  and should not be treated as the tested local runtime or a complete deployment recipe.
 - A MongoDB replica set, such as an Atlas cluster, for Prisma's MongoDB transaction support.
 - Redis reachable from the application.
-- Docker Compose if using the bundled supporting services.
+- Docker with the Compose plugin for the supporting-service commands below.
 
 Run the following commands from this project directory.
 
@@ -267,6 +303,8 @@ update it without overwriting your database credentials.
 ```powershell
 Copy-Item .env.example .env
 ```
+
+On Linux or macOS, use `cp .env.example .env` for a new checkout.
 
 ```dotenv
 PORT=3000
@@ -315,6 +353,10 @@ npx prisma db push --schema=src/ca_infrastructure/database/prisma/mongodb/schema
 Review schema changes before applying them to an existing database. MongoDB uses `db push`;
 Prisma Migrate is not used for the MongoDB provider. The PostgreSQL migration folder belongs to
 the alternative relational implementation.
+
+The repository includes generated clients, but regenerating them prepares Prisma's native
+runtime for your platform. Generate and copy them again when changing operating systems or
+container targets.
 
 ### 5. Start the API
 
@@ -368,6 +410,14 @@ All paths below are relative to `http://localhost:3000`. Protected routes requir
 
 The order customer lookup route defines `:name`, but the controller reads `req.params.id`.
 That endpoint needs correction before use. List endpoints currently return unpaginated data.
+
+### Response behavior
+
+Controllers return resource objects or arrays directly, without a shared response envelope.
+Successful creates use `201`, reads and updates use `200`, and deletes use `204` with no response
+body. A read using a valid but absent ObjectId can return `200` with `null`; missing-resource
+handling is not consistently mapped to `404`. Repository failures and customer validation errors
+are generally wrapped as `500` responses. An unknown URL returns Express's `404` response.
 
 ### Register and log in
 
@@ -430,8 +480,8 @@ Content-Type: application/json
 }
 ```
 
-Keep the returned `customerCode` and `productCode`. MongoDB IDs are ObjectId strings rather than
-the UUIDs used by the example Part 6 API. Field spelling and singular route names are significant.
+Keep the returned `customerCode` and `productCode`. Resource IDs are MongoDB ObjectId strings,
+normally 24 hexadecimal characters. Field spelling and singular route names are significant.
 
 ### Place an order
 
@@ -465,7 +515,23 @@ totals, reserve stock, or enforce a commerce lifecycle. Order reads include the 
 with their products. Item updates use separate delete/create operations and are not wrapped with
 the order update in a single explicit transaction.
 
-See [backend.postman_collection.json](backend.postman_collection.json) for additional editable requests.
+For `PUT /api/order/:id`, a non-empty `orderItems` array replaces the existing items. Omitting the
+array or supplying `[]` leaves them unchanged. The PUT response is assembled before replacement,
+so it can contain the previous items; perform a fresh GET to read the resulting item list. Order
+deletion removes items and then the order in separate calls; it is a hard delete.
+
+### Using the Postman collection
+
+[backend.postman_collection.json](backend.postman_collection.json) contains legacy request examples,
+including incomplete requests. It is not a complete, current API contract or an automated test
+suite. Use the route table and request examples above as the reference when configuring it:
+
+1. Import the collection and check each request's method and URL against the route table.
+2. Replace saved resource IDs with values created in your own database.
+3. Register and log in, then set protected requests to **Bearer Token** using the returned `token`.
+4. Replace example request bodies and remove unused or empty requests before running a collection.
+
+The additional collection under [src/Testing/](src/Testing/) is also legacy learning material.
 
 ---
 
@@ -480,6 +546,7 @@ Logs:    API → Winston → Loki → Grafana
 
 **Metrics** answer questions such as "How many requests are failing?" and "How slow is this route?"
 **Logs** describe individual events. Use a response's `X-Request-Id` to find its completion log.
+The walkthrough assumes you have completed the dependency, environment and Prisma setup above.
 
 ### 1. Start the learning stack
 
@@ -523,6 +590,10 @@ Console logging works with either value of `LOKI_ENABLED`. Setting it to `false`
 transport entirely. HTTP completion records contain a generated `requestId`, method, route
 template, `statusCode`, `durationMs`, timestamp and service name. They omit headers, bodies, raw
 IDs and query strings.
+
+Keep `LOG_LEVEL=info` for the exercise: successful requests log at `info`, 4xx responses at `warn`,
+and 5xx responses at `error`. These completion logs are written after a response finishes.
+Other application debug statements and exception logs do not all use the same safe field set.
 
 ### 3. Check that Prometheus can reach the API
 
@@ -599,9 +670,14 @@ docker compose stop redis loki prometheus grafana
 The second command stops the learning services when you are done. Container logs can be inspected
 with `docker compose logs --tail=50 loki prometheus grafana`.
 
-A containerized API needs service-aware addresses for Loki and Redis. The Dockerfile also needs
-the generated Prisma runtime assets in `dist`, as described in the compiled setup, before it
-provides a reliable standalone API image.
+A containerized API needs service-aware addresses for Loki and Redis. The Dockerfile is tutorial
+scaffolding: it uses Node 18 and `npm install`, installs additional development tools, and does
+not generate and copy the required Prisma runtime assets into `dist`. Preparing an API image also
+requires generating Prisma engines compatible with its Linux/Alpine runtime.
+
+There is currently no `.dockerignore`; the Dockerfile's `COPY . .` includes local files such as
+`.env` when present in the build context. Review the build context, dependency installation,
+runtime assets and secret handling before using the image or the release-publishing workflow.
 
 ---
 
@@ -611,6 +687,7 @@ provides a reliable standalone API image.
 | :--- | :--- |
 | `npm run dev` | Run TypeScript with nodemon |
 | `npm run build` | Compile TypeScript to `dist/` |
+| `npm start` | Run the existing compiled entry point; requires the build and Prisma asset-copy steps above |
 | `npm run lint` | Run the configured ESLint checks |
 | `npx tsc --noEmit` | Check types without producing build files |
 | `npm run test:monitoring` | Check safe logs, route labels and metrics availability under API rate limiting |
@@ -618,9 +695,12 @@ provides a reliable standalone API image.
 The monitoring regression suite exercises the real Express middleware order using synthetic
 routes and in-memory HTTP streams, without MongoDB, Redis or Docker. It does not verify dashboard
 rendering or replace a full API integration suite. There is currently no general `npm test` script.
-It also checks that successful login does not print credentials. The lockfile includes the
-compatible `jwa` 1.4.2 patch, which replaces the removed `SlowBuffer` dependency with
-`crypto.timingSafeEqual`, so JWT signing works on the Node 26 runtime used for these checks.
+It also checks successful login without credential logging and verifies the issued JWT signatures;
+its database, Redis and authentication-route dependencies are stubbed. It does not exercise real
+database-backed registration, CRUD, token refresh or logout.
+
+The lockfile includes the compatible `jwa` 1.4.2 patch, which avoids the removed `SlowBuffer` API
+by using `crypto.timingSafeEqual`, so JWT signing works on the Node 26 runtime used for these checks.
 See the [upstream patch notes](https://github.com/auth0/node-jwa/releases/tag/v1.4.2).
 
 Import the Postman collection, adjust its URLs and credentials for your local setup, and exercise
@@ -640,13 +720,16 @@ review before reuse in another repository.
   prints passwords or user records. User API responses can still include password hashes;
   explicit response serialization remains necessary. Review error logs too: existing exception
   handlers include underlying error messages and stack traces, which may contain input values.
+  Other debug statements still print user identifiers.
 - **Validation and errors:** customer creation has Zod validation, but validation coverage is
   incomplete and customer validation failures are currently wrapped as HTTP 500 errors.
 - **Commerce consistency:** prices/totals are floating-point values. Server-calculated totals,
   inventory reservations, idempotency, controlled payment transitions and atomic multi-step order
   updates require implementation.
 - **Token lifecycle:** refresh requires a valid access token, token types are not distinguished,
-  and cached login entries have no TTL. Review refresh, revocation and password-update behavior.
+  and cached login entries have no TTL. User updates write supplied passwords without the
+  registration hashing step. Updating or deleting a user does not invalidate their Redis login
+  entry; the JWT guard checks that cache rather than rereading the database.
 - **Operations:** add readiness checks, graceful shutdown, managed secrets, TLS, backups and
   environment-specific configuration. Compose contains development credentials and several
   unpinned images; the Dockerfile's Node 18 base also needs review before deployment.
