@@ -21,9 +21,7 @@ export class LoginUsecase
 
   async execute(email: string, password: string): Promise<{ token: string, refreshToken: string } | null> 
   {
-    console.log(email, password);
     const user:User | null = await this.userRepository.findByEmail(email);
-    console.log(user);
 
     if (!user || !(await bcrypt.compare(password, user.password))) 
         throw new Error('Invalid credentials');

@@ -25,6 +25,12 @@ dotenv.config();
 //Creating express app
 const app = express();
 
+// Observe failures from parsing and rate limiting as well as controller responses.
+app.use(metricsMiddleware);
+app.use(logRequest);
+// Scrapes remain available even when the API rate limit is exhausted.
+app.get('/metrics', metricsEndpoint);
+
 //Securing endpoints using passport authenticator
 const passportConfig = new PassportConfig();
 app.use(passportConfig.initialize());
@@ -36,24 +42,13 @@ app.use(express.urlencoded({ extended: false }));
 app.use(bodyparser.json());
 app.use(cookieParser());
 app.use(cors(corsOptions)); 
-app.use(limiter);
-
-//Add prometheus
-app.use(metricsMiddleware);
-
-// Add Loki middleware
-if (process.env.LOKI_ENABLED === 'true') 
-{
-    app.use(logRequest);
-}
+app.use('/api', limiter);
 
 //Routes
 app.use('/api/product', productroutes);
 app.use('/api/customer', customerroutes);
 app.use('/api/order', orderroutes);
 app.use('/api/user', userroutes);
-// Expose the metrics at /metrics endpoint
-app.get('/metrics', metricsEndpoint);
 
 app.use(express.static(path.join(__dirname, 'public')));
 

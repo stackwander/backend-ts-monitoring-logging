@@ -1,12 +1,14 @@
 {
   "name": "backendcleants",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "nodemon ./src/bin/www.ts",
     "build": "tsc",
     "start": "node -r ./dist/bin/www.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:monitoring": "node --test -r ts-node/register test/monitoring.test.cjs"
   },
   "dependencies": {
     "@meanie/passport-refresh-strategy": "^3.1.0",

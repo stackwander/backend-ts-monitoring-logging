@@ -1,26 +1,32 @@
-import winston, { format, transports } from 'winston'; //library for logging
+import dotenv from 'dotenv';
+import winston, { format, transports } from 'winston';
 import LokiTransport from 'winston-loki';
-//Pino-loki is alternative to winston-loki for better performance
-const logger = winston.createLogger({
-  level: 'info',
-  format: format.combine(
-    format.timestamp(),
-    format.json()
-  ),
-  transports: [
-    new transports.Console({
-      format: format.combine(
-        format.colorize(),
-        format.simple()
-      )
-    }),
-    new LokiTransport({
-      host: 'http://127.0.0.1:3100',
-      json: true,
-      labels: { job: 'backendcleants_p2' },
-      onConnectionError: (err) => console.error('Loki connection error:', err)
-    }),
-  ],
-});
 
-export default logger;
+dotenv.config();
+
+export function createAppLogger(env: NodeJS.ProcessEnv = process.env): winston.Logger {
+  const service = env.APP_NAME || 'backendcleants_p4';
+  const logger = winston.createLogger({
+    level: env.LOG_LEVEL || 'info',
+    defaultMeta: { service },
+    format: format.combine(format.timestamp(), format.json()),
+    transports: [new transports.Console()],
+  });
+
+  // Console logging works independently of the optional Loki stack.
+  if (env.LOKI_ENABLED === 'true') {
+    logger.add(new LokiTransport({
+      host: env.LOKI_URL || 'http://127.0.0.1:3100',
+      json: true,
+      format: format.json(),
+      labels: { job: service },
+      timeout: 5000,
+      clearOnError: true,
+      onConnectionError: () => console.error('Loki is unavailable; check LOKI_URL and the Loki service.'),
+    }));
+  }
+
+  return logger;
+}
+
+export default createAppLogger();
